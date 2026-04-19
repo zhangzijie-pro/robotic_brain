@@ -1,0 +1,45 @@
+skills:
+  observe:
+    enabled: true
+    risk: low
+    timeout_ms: 3000
+
+  navigate_to:
+    enabled: true
+    risk: medium
+    timeout_ms: 30000
+
+  estimate_grasp_pose:
+    enabled: true
+    risk: medium
+    timeout_ms: 5000
+
+  grasp:
+    enabled: true
+    risk: high
+    timeout_ms: 10000
+
+  handover_to_human:
+    enabled: true
+    risk: high
+    timeout_ms: 10000
+
+  follow_escort:
+    enabled: false
+    risk: medium
+    timeout_ms: 60000
+
+  inspection:
+    enabled: true
+    risk: medium
+    timeout_ms: 60000
+
+  dock_charge:
+    enabled: false
+    risk: medium
+    timeout_ms: 90000
+
+  fly_to:
+    enabled: false
+    risk: high
+    timeout_ms: 30000

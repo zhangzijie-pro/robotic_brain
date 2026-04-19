@@ -1,0 +1,101 @@
+profiles:
+  generic_mobile_manipulator:
+    robot_id: generic_robot
+    robot_type: mobile_manipulator
+    base_frame: base_link
+    map_frame: map
+    capabilities:
+      observe:
+        enabled: true
+      navigate_to:
+        enabled: true
+        limits:
+          max_speed_mps: 0.25
+      estimate_grasp_pose:
+        enabled: true
+      grasp:
+        enabled: true
+        limits:
+          max_arm_speed_scale: 0.2
+          force_limited: true
+      handover_to_human:
+        enabled: true
+        limits:
+          min_human_distance_m: 0.8
+          requires_confirmation: true
+      follow_escort:
+        enabled: false
+      inspection:
+        enabled: true
+      dock_charge:
+        enabled: false
+      fly_to:
+        enabled: false
+    sensors:
+      rgb_camera:
+        modality: rgb
+        frame_id: camera_color_optical_frame
+      depth_camera:
+        modality: depth
+        frame_id: camera_depth_optical_frame
+      lidar:
+        modality: lidar_radar
+        frame_id: laser
+      mic_array:
+        modality: audio
+        frame_id: mic_array
+      imu_encoder:
+        modality: proprioception
+        frame_id: base_link
+      wrist_force:
+        modality: force
+        frame_id: wrist_force_torque
+    control:
+      middleware: ros2
+      namespace: ""
+      base_controller: /cmd_vel
+      arm_controller: /follow_joint_trajectory
+      gripper_controller: /gripper_controller/gripper_cmd
+      tts: /tts
+
+  generic_drone:
+    robot_id: generic_drone
+    robot_type: drone
+    base_frame: base_link
+    map_frame: map
+    capabilities:
+      observe:
+        enabled: true
+      navigate_to:
+        enabled: false
+      fly_to:
+        enabled: true
+        limits:
+          max_speed_mps: 1.0
+          max_altitude_m: 20.0
+      inspection:
+        enabled: true
+      dock_charge:
+        enabled: true
+      grasp:
+        enabled: false
+      handover_to_human:
+        enabled: false
+    sensors:
+      rgb_camera:
+        modality: rgb
+        frame_id: camera_color_optical_frame
+      depth_camera:
+        modality: depth
+        frame_id: camera_depth_optical_frame
+      imu:
+        modality: imu
+        frame_id: imu_link
+      lidar:
+        modality: lidar_radar
+        frame_id: lidar
+    control:
+      middleware: ros2
+      namespace: drone
+      flight_controller: /drone/fly_to_pose
+      tts: /drone/tts

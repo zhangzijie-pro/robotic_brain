@@ -1,0 +1,47 @@
+agents:
+  audio_agent:
+    enabled: true
+    tick_hz: 2
+    priority: 50
+    outputs:
+      - task_command_fact
+
+  vision_agent:
+    enabled: true
+    tick_hz: 2
+    priority: 70
+    vlm_prompts:
+      - scene_summary
+      - object_detection
+      - risk_detection
+    outputs:
+      - object_fact
+      - scene_fact
+      - risk_fact
+
+  spatial_agent:
+    enabled: true
+    tick_hz: 5
+    priority: 75
+    inputs:
+      - object_fact
+      - depth_frame
+      - robot_pose
+    outputs:
+      - spatial_relation_fact
+      - reachability_fact
+
+  proprioception_agent:
+    enabled: true
+    tick_hz: 10
+    priority: 80
+    outputs:
+      - robot_state_fact
+
+  human_interaction_agent:
+    enabled: true
+    tick_hz: 3
+    priority: 65
+    outputs:
+      - human_state_fact
+

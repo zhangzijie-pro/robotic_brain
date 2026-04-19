@@ -1,0 +1,15 @@
+vlm_service:
+  provider: mock
+  request_timeout_ms: 8000
+  max_batch_size: 8
+  max_wait_ms: 50
+  cache_enabled: true
+
+ollama:
+  base_url: http://host.docker.internal:11434
+  model: qwen3-vl:2b
+  temperature: 0.1
+
+openai:
+  model: gpt-4.1-mini
+  detail: low

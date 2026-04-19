@@ -1,0 +1,34 @@
+model_service:
+  default_provider: mock
+  max_concurrency: 2
+  request_timeout_ms: 8000
+
+providers:
+  mock:
+    type: local
+
+  ollama:
+    type: local
+    # base_url: http://host.docker.internal:11434
+    base_url: http://127.0.0.1:11434
+
+    default_model: qwen2.5:3b
+    supports:
+      - llm
+      - vlm
+
+  openai_compatible:
+    type: cloud_or_self_hosted
+    base_url_env: ROBOT_BRAIN_MODEL_BASE_URL
+    api_key_env: ROBOT_BRAIN_MODEL_API_KEY
+    model_env: ROBOT_BRAIN_MODEL_NAME
+    supports:
+      - llm
+      - vlm
+
+  custom_http:
+    type: custom
+    base_url_env: ROBOT_BRAIN_MODEL_BASE_URL
+    api_key_env: ROBOT_BRAIN_MODEL_API_KEY
+    model_env: ROBOT_BRAIN_MODEL_NAME
+    contract: /v1/chat/completions compatible

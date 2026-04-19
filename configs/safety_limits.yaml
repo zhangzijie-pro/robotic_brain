@@ -1,0 +1,15 @@
+safety:
+  max_base_speed_mps: 0.25
+  max_arm_speed_scale: 0.2
+  min_human_distance_m: 0.8
+  require_confirmation_for:
+    - unknown_object
+    - sharp_object
+    - hot_object
+    - fragile_object
+  hard_stop_rules:
+    - human_too_close
+    - collision_predicted
+    - unstable_grasp
+    - emergency_stop_pressed
+
