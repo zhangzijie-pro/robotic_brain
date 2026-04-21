@@ -8,6 +8,7 @@
 - [docs/open_robot_brain_architecture.md](docs/open_robot_brain_architecture.md)
 - [docs/project_tree.md](docs/project_tree.md)
 - [docs/real_robot_brain_migration.md](docs/real_robot_brain_migration.md)
+- [docs/codebase_walkthrough_and_extension_guide.md](docs/codebase_walkthrough_and_extension_guide.md)
 
 ## 快速运行
 
@@ -57,25 +58,61 @@ python3 -m robot_brain.demo --pretty --robot-bridge ros2
 ./scripts/run_local_demo.sh
 ```
 
-从 Docker 里调用 Mac 宿主机上的 Ollama：
+当前 demo 已经接入一条基础 learning path。输出里除了 `plan` 和 `execution_trace`，还会包含：
+
+- `action_packets`
+- `trajectory`
+- `learning_records`
+- `skill_patches`
+- `strategy_snapshot`
+- `memory_graph`
+
+如果你希望跨多次运行积累 episodic 经验，可设置：
 
 ```bash
-# 在 Mac 宿主机执行
+export ROBOT_BRAIN_EPISODIC_STORE="$HOME/.robot_brain/episodes.jsonl"
+```
+
+使用本机 Ollama：
+
+```bash
+ollama pull qwen3.5:0.8b
 ollama pull qwen3-vl:2b
 
-# 在 Docker 容器里执行
 ROBOT_BRAIN_VLM_PROVIDER=ollama ./scripts/run_local_demo.sh
 ```
 
-如果 Mac 内存更充足，可以换成 8B：
+当前本地 Ollama 默认拆成两条路径：
+
+- text-only dry-run: `qwen3.5:0.8b` + `/api/generate`
+- image vision path: `qwen3-vl:2b` + `/api/chat`
+
+已验证可跑通的命令：
+
+```bash
+../envirment/bin/python -m robot_brain.demo --provider ollama --pretty
+```
+
+如果要让 demo 读取真实图片，请切到视觉模型并提高 image deadline：
 
 ```bash
 ROBOT_BRAIN_VLM_PROVIDER=ollama \
-ROBOT_BRAIN_OLLAMA_MODEL=qwen3-vl:8b \
+ROBOT_BRAIN_OLLAMA_VISION_MODEL=qwen3-vl:2b \
+ROBOT_BRAIN_VLM_IMAGE_DEADLINE_MS=180000 \
+python3 -m robot_brain.demo --provider ollama --image src/robot_brain/img.jpg --pretty
+```
+
+注意：`qwen3-vl:2b` 在这台机器上很慢，而且有时只返回 thinking、不返回正文。当前建议先用 text-only Ollama 或 mock 跑通主流程，再把 vision 当成单独实验分支调。
+
+从 Docker 里调用 Mac 宿主机上的 Ollama 时，覆盖 host：
+
+```bash
+OLLAMA_HOST=http://host.docker.internal:11434 \
+ROBOT_BRAIN_VLM_PROVIDER=ollama \
 ./scripts/run_local_demo.sh
 ```
 
-检查 Docker 是否能访问宿主机 Ollama：
+检查当前 Ollama 模型是否能被本机服务调用：
 
 ```bash
 ./scripts/check_ollama_vision.sh

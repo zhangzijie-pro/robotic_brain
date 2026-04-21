@@ -1,13 +1,15 @@
 vlm_service:
   provider: mock
-  request_timeout_ms: 8000
+  request_timeout_ms: 3000000
   max_batch_size: 8
   max_wait_ms: 50
   cache_enabled: true
 
 ollama:
-  base_url: http://host.docker.internal:11434
+  base_url: http://127.0.0.1:11434
   model: qwen3-vl:2b
+  think: false
+  num_predict: 192
   temperature: 0.1
 
 openai:
