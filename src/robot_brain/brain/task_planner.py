@@ -3,6 +3,7 @@ from __future__ import annotations
 from robot_brain.brain.world_model import WorldModel
 from robot_brain.config import create_default_robot_profile
 from robot_brain.core import PlanStep, RobotProfile
+from robot_brain.executive.planner_bias import PlannerBias
 
 
 class TaskPlanner:
@@ -10,11 +11,14 @@ class TaskPlanner:
         self,
         world: WorldModel,
         robot_profile: RobotProfile | None = None,
+        retrieved_cases: list[dict] | None = None,
+        planner_bias: PlannerBias | None = None,
     ) -> list[PlanStep]:
         robot_profile = robot_profile or create_default_robot_profile()
+        retrieved_cases = retrieved_cases or []
         target = world.find_target_object()
         if not target:
-            return [
+            plan = [
                 PlanStep(
                     name="observe_scene",
                     skill="observe",
@@ -22,14 +26,16 @@ class TaskPlanner:
                     risk="low",
                 )
             ]
+            return planner_bias.apply(plan, retrieved_cases) if planner_bias else plan
 
         object_id, payload = target
         name = payload.get("name", object_id)
         if robot_profile.robot_type == "drone" or robot_profile.has_capability("fly_to"):
-            return self._create_inspection_or_drone_plan(object_id, payload, name)
+            plan = self._create_inspection_or_drone_plan(object_id, payload, name)
+            return planner_bias.apply(plan, retrieved_cases) if planner_bias else plan
 
         if not robot_profile.has_capability("grasp"):
-            return [
+            plan = [
                 PlanStep(
                     name="inspect_target",
                     skill="inspection",
@@ -37,8 +43,9 @@ class TaskPlanner:
                     risk="medium",
                 )
             ]
+            return planner_bias.apply(plan, retrieved_cases) if planner_bias else plan
 
-        return [
+        plan = [
             PlanStep(
                 name="verify_target",
                 skill="observe",
@@ -70,6 +77,7 @@ class TaskPlanner:
                 risk="high",
             ),
         ]
+        return planner_bias.apply(plan, retrieved_cases) if planner_bias else plan
 
     def _create_inspection_or_drone_plan(
         self,

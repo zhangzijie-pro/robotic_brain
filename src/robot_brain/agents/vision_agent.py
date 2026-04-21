@@ -15,35 +15,30 @@ class VisionAgent(Agent):
         self.image_refs = image_refs or []
 
     async def run_once(self, blackboard: Blackboard) -> list[Fact]:
-        prompt = """
-You are the visual perception module of a robot.
-Return only JSON. Use this schema:
-{
-  "objects": [
-    {
-      "id": "stable_object_id",
-      "name": "short object name",
-      "bbox": [x1, y1, x2, y2],
-      "state": "short state",
-      "location_hint": "short spatial hint",
-      "confidence": 0.0
-    }
-  ],
-  "scene_summary": "one sentence",
-  "risks": ["short risk"],
-  "uncertainty": ["short uncertainty"],
-  "confidence": 0.0
-}
-If no image is provided, this is a dry-run demo: assume a red cup and a book
-are on a table, and still return valid JSON.
+        if self.image_refs:
+            prompt = """
+Return only JSON with keys: objects, scene_summary, risks, uncertainty, confidence.
+Each object must include: id, name, bbox, state, location_hint, confidence.
+Keep the response short and do not explain.
 """
+            deadline_ms = int(os.getenv("ROBOT_BRAIN_VLM_IMAGE_DEADLINE_MS", "180000"))
+        else:
+            prompt = """
+Return compact JSON only.
+Scene: a red cup and a closed book are on a table.
+Required keys: objects, scene_summary, risks, confidence.
+objects must have exactly 2 items.
+Each object must have id, name, location_hint, confidence.
+Keep output short.
+"""
+            deadline_ms = int(os.getenv("ROBOT_BRAIN_VLM_DEADLINE_MS", "90000"))
         response = await self.vlm.infer(
             VLMRequest(
                 caller=self.name,
                 prompt=prompt.strip(),
                 image_refs=self.image_refs,
                 priority=self.priority,
-                deadline_ms=int(os.getenv("ROBOT_BRAIN_VLM_DEADLINE_MS", "8000")),
+                deadline_ms=deadline_ms,
                 schema={"required": ["objects", "scene_summary", "risks"]},
             )
         )

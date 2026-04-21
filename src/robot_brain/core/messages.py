@@ -178,6 +178,69 @@ class SkillResult:
 
 
 @dataclass(slots=True)
+class DecisionTrace:
+    reason_codes: list[str] = field(default_factory=list)
+    confidence_sources: list[str] = field(default_factory=list)
+    retrieved_case_ids: list[str] = field(default_factory=list)
+    safety_rationale: str | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class ActionPacket:
+    task_id: str
+    intent: str
+    target_id: str | None
+    next_skill: str
+    skill_args: dict = field(default_factory=dict)
+    risk_level: str = "low"
+    need_replan: bool = False
+    need_human: bool = False
+    fallback_skill: str | None = None
+    confidence: float = 0.0
+    decision_trace: DecisionTrace = field(default_factory=DecisionTrace)
+
+    def to_dict(self) -> dict:
+        payload = asdict(self)
+        payload["decision_trace"] = self.decision_trace.to_dict()
+        return payload
+
+
+@dataclass(slots=True)
+class SkillPatch:
+    patch_id: str = field(default_factory=lambda: new_id("skill_patch"))
+    target_skill: str = ""
+    patch_type: str = "skill_heuristic_update"
+    fields: dict = field(default_factory=dict)
+    rationale: str | None = None
+    status: str = "draft"
+    confidence: float = 0.0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class LearningRecord:
+    task_id: str
+    selected_skill: str
+    world_state_features: dict = field(default_factory=dict)
+    safety_events: list[dict] = field(default_factory=list)
+    outcome: str = "unknown"
+    root_cause: str | None = None
+    lesson: str | None = None
+    candidate_patch: dict | None = None
+    decision_trace: dict = field(default_factory=dict)
+    reusable: bool = False
+    timestamps: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class RobotCapability:
     name: str
     enabled: bool = True

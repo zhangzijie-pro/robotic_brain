@@ -11,7 +11,7 @@ from pathlib import Path
 
 from robot_brain.core import ModelRequest, ModelResponse
 from robot_brain.models.base import ModelClient
-from robot_brain.vlm_service.providers import _parse_jsonish
+from robot_brain.vlm_service.providers import _as_float, _parse_jsonish, _post_ollama_json
 
 
 def create_model_client(provider: str | None = None) -> ModelClient:
@@ -21,8 +21,11 @@ def create_model_client(provider: str | None = None) -> ModelClient:
         return MockModelClient()
     if provider == "ollama":
         return OllamaModelClient(
-            base_url=os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434"),
-            model=os.getenv("ROBOT_BRAIN_OLLAMA_MODEL", "qwen3-vl:2b"),
+            base_url=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"),
+            model=(
+                os.getenv("ROBOT_BRAIN_OLLAMA_MODEL")
+                or os.getenv("ROBOT_BRAIN_OLLAMA_TEXT_MODEL", "qwen3.5:0.8b")
+            ),
         )
     if provider in {"openai_compatible", "cloud", "custom_http"}:
         return OpenAICompatibleModelClient(
@@ -82,25 +85,22 @@ class OllamaModelClient:
 
     async def infer(self, request: ModelRequest) -> ModelResponse:
         start = time.perf_counter()
-        payload = {
-            "model": self.model,
-            "stream": False,
-            "messages": request.messages
-            or [
-                {
-                    "role": "user",
-                    "content": request.prompt,
-                    "images": [_image_to_base64(path) for path in request.image_refs],
-                }
-            ],
-        }
-        data = _post_json(f"{self.base_url}/api/chat", payload, {}, request.deadline_ms)
-        raw_text = data.get("message", {}).get("content", "")
+        payload, endpoint = self._build_payload(request)
+        data = _post_ollama_json(
+            f"{self.base_url}{endpoint}",
+            payload,
+            request.deadline_ms,
+        )
+        raw_text = (
+            data.get("message", {}).get("content", "")
+            if endpoint == "/api/chat"
+            else data.get("response", "")
+        )
         result: dict | str = _parse_jsonish(raw_text) if request.schema else raw_text
         return ModelResponse(
             request_id=request.request_id,
             result=result,
-            confidence=float(result.get("confidence", 0.65))
+            confidence=_as_float(result.get("confidence"), 0.65)
             if isinstance(result, dict)
             else 0.65,
             latency_ms=int((time.perf_counter() - start) * 1000),
@@ -109,6 +109,41 @@ class OllamaModelClient:
             raw_text=raw_text,
             evidence_refs=request.image_refs,
         )
+
+    def _build_payload(self, request: ModelRequest) -> tuple[dict, str]:
+        temperature = float(os.getenv("ROBOT_BRAIN_MODEL_TEMPERATURE", "0.1"))
+        if request.messages or request.image_refs:
+            message = {
+                "role": "user",
+                "content": request.prompt,
+            }
+            if request.image_refs:
+                message["images"] = [_image_to_base64(path) for path in request.image_refs]
+            return (
+                {
+                    "model": self.model,
+                    "stream": True,
+                    "messages": request.messages or [message],
+                    "options": {"temperature": temperature},
+                },
+                "/api/chat",
+            )
+
+        payload = {
+            "model": self.model,
+            "stream": False,
+            "think": _ollama_think_value(),
+            "prompt": request.prompt,
+            "options": {
+                "temperature": temperature,
+                "num_predict": int(
+                    os.getenv("ROBOT_BRAIN_OLLAMA_TEXT_NUM_PREDICT", "160")
+                ),
+            },
+        }
+        if request.schema:
+            payload["format"] = "json"
+        return (payload, "/api/generate")
 
 
 class OpenAICompatibleModelClient:
@@ -188,3 +223,12 @@ def _to_openai_user_message(request: ModelRequest) -> dict:
             }
         )
     return {"role": "user", "content": content}
+
+
+def _ollama_think_value() -> bool | str:
+    raw_value = os.getenv("ROBOT_BRAIN_OLLAMA_THINK", "false").strip().lower()
+    if raw_value in {"true", "1", "yes", "on"}:
+        return True
+    if raw_value in {"false", "0", "no", "off"}:
+        return False
+    return raw_value

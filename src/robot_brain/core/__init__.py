@@ -1,5 +1,8 @@
 from robot_brain.core.messages import (
+    ActionPacket,
+    DecisionTrace,
     Fact,
+    LearningRecord,
     ModelRequest,
     ModelResponse,
     Observation,
@@ -9,13 +12,19 @@ from robot_brain.core.messages import (
     RobotProfile,
     SafetyDecision,
     SensorFrame,
+    SkillPatch,
     SkillResult,
     VLMRequest,
     VLMResponse,
+    new_id,
+    now_ts,
 )
 
 __all__ = [
+    "ActionPacket",
+    "DecisionTrace",
     "Fact",
+    "LearningRecord",
     "ModelRequest",
     "ModelResponse",
     "Observation",
@@ -25,7 +34,10 @@ __all__ = [
     "RobotProfile",
     "SafetyDecision",
     "SensorFrame",
+    "SkillPatch",
     "SkillResult",
     "VLMRequest",
     "VLMResponse",
+    "new_id",
+    "now_ts",
 ]

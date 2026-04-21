@@ -4,7 +4,11 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from robot_brain.agents import (
     AudioAgent,
@@ -22,6 +26,21 @@ from robot_brain.brain import (
 )
 from robot_brain.config import create_default_robot_profile
 from robot_brain.control import create_robot_bridge
+from robot_brain.core.messages import new_id
+from robot_brain.decision_models import ParallelActionHead
+from robot_brain.executive import PlannerBias
+from robot_brain.feedback.failure_taxonomy import classify_step_failure
+from robot_brain.learning.reflection_engine import ReflectionEngine
+from robot_brain.learning.skill_distiller import SkillDistiller
+from robot_brain.learning.strategy_optimizer import StrategyOptimizer
+from robot_brain.learning.trajectory_recorder import TrajectoryRecorder
+from robot_brain.memory import (
+    EpisodicStore,
+    MemoryGraph,
+    MemoryRetriever,
+    ProceduralStore,
+    SpatialStore,
+)
 from robot_brain.skills import SkillExecutor
 from robot_brain.vlm_service import VLMService, create_vlm_client
 
@@ -33,9 +52,23 @@ async def run_demo(
     robot_bridge: str | None = None,
     robot_type: str = "generic_mobile_manipulator",
 ) -> dict:
+    task_id = new_id("task")
     blackboard = Blackboard()
     vlm = VLMService(create_vlm_client(provider=provider), max_concurrency=1)
     robot_profile = create_default_robot_profile(robot_type=robot_type)
+    episodic_store_path = os.getenv("ROBOT_BRAIN_EPISODIC_STORE")
+    episodic_store = EpisodicStore(
+        path=Path(episodic_store_path).expanduser() if episodic_store_path else None
+    )
+    procedural_store = ProceduralStore()
+    spatial_store = SpatialStore()
+    memory_retriever = MemoryRetriever(
+        episodic_store=episodic_store,
+        procedural_store=procedural_store,
+        spatial_store=spatial_store,
+    )
+    memory_graph = MemoryGraph()
+    strategy_optimizer = StrategyOptimizer()
 
     initial_agents = [
         AudioAgent(command_text=command),
@@ -53,20 +86,58 @@ async def run_demo(
 
     world = WorldModel()
     await world.update_from_blackboard(blackboard)
+    for object_id, payload in world.objects.items():
+        location_hint = str(payload.get("location_hint", "unknown"))
+        spatial_store.remember_zone(
+            location_hint,
+            {"last_object_id": object_id, "scene_summary": world.scene_summary},
+        )
 
-    plan = TaskPlanner().create_plan(world, robot_profile=robot_profile)
+    retrieved_cases = memory_retriever.retrieve_cases(
+        task_text=command,
+        robot_type=robot_type,
+        scene_summary=world.scene_summary,
+        top_k=5,
+    )
+
+    planner_bias = PlannerBias()
+    plan = TaskPlanner().create_plan(
+        world,
+        robot_profile=robot_profile,
+        retrieved_cases=retrieved_cases,
+        planner_bias=planner_bias,
+    )
     selected_steps = BehaviorPlanner().select_next_steps(plan)
+    action_packets = ParallelActionHead().build_packets(
+        task_id=task_id,
+        plan=selected_steps,
+        world=world,
+        retrieved_cases=retrieved_cases,
+    )
     safety = SafetySupervisor()
     executor = SkillExecutor(robot_bridge=create_robot_bridge(robot_bridge))
+    recorder = TrajectoryRecorder(
+        task_id=task_id,
+        command=command,
+        robot_type=robot_type,
+        initial_world_state=world.to_dict(),
+        retrieved_case_ids=[
+            str(case.get("task_id"))
+            for case in retrieved_cases
+            if case.get("task_id")
+        ],
+    )
 
     execution_trace = []
-    for step in selected_steps:
+    for step, action_packet in zip(selected_steps, action_packets):
         decision = safety.check(step, world)
         trace_item = {
             "step": step.to_dict(),
+            "action_packet": action_packet.to_dict(),
             "safety": decision.to_dict(),
             "skill_result": None,
         }
+        result = None
         if decision.allowed:
             result = await executor.execute(step)
             await blackboard.publish(result.to_fact())
@@ -76,6 +147,16 @@ async def run_demo(
                 "details": result.details,
                 "latency_ms": result.latency_ms,
             }
+            procedural_store.record_outcome(step.skill, success=result.status == "success")
+        else:
+            procedural_store.record_outcome(step.skill, success=False)
+
+        recorder.record_step(
+            action_packet=action_packet,
+            safety_decision=decision,
+            skill_result=result,
+            failure_type=classify_step_failure(action_packet, decision, result),
+        )
         execution_trace.append(trace_item)
         if not decision.allowed:
             break
@@ -86,7 +167,22 @@ async def run_demo(
             break
 
     await world.update_from_blackboard(blackboard)
+    trajectory = recorder.finalize(world.to_dict())
+    episodic_store.add_trajectory(trajectory)
+    learning_records = ReflectionEngine().reflect(trajectory)
+    strategy_optimizer.update(learning_records)
+
+    skill_distiller = SkillDistiller()
+    skill_patches = []
+    for record in learning_records:
+        patch = skill_distiller.distill(record)
+        if patch:
+            procedural_store.record_patch(patch)
+            skill_patches.append(patch.to_dict())
+
+    memory_graph.ingest_trajectory(trajectory, learning_records)
     return {
+        "task_id": task_id,
         "provider": provider or os.getenv("ROBOT_BRAIN_VLM_PROVIDER", "mock"),
         "robot_bridge": robot_bridge
         or os.getenv("ROBOT_BRAIN_ROBOT_BRIDGE", "dry_run"),
@@ -99,8 +195,35 @@ async def run_demo(
         },
         "world_model": world.to_dict(),
         "plan": [step.to_dict() for step in plan],
+        "action_packets": [packet.to_dict() for packet in action_packets],
+        "planner_context": {
+            "retrieved_cases": [_summarize_case(case) for case in retrieved_cases],
+            "planner_bias_applied": bool(
+                plan and plan[0].name == "observe_scene_refresh"
+            ),
+        },
         "execution_trace": execution_trace,
+        "trajectory": trajectory.to_dict(),
+        "learning_records": [record.to_dict() for record in learning_records],
+        "skill_patches": skill_patches,
+        "strategy_snapshot": strategy_optimizer.snapshot(),
+        "procedural_memory": procedural_store.snapshot(),
+        "memory_graph": memory_graph.to_dict(),
         "blackboard": await blackboard.snapshot(),
+    }
+
+
+def _summarize_case(case: dict) -> dict:
+    failed_steps = [
+        step.get("skill")
+        for step in case.get("steps", [])
+        if step.get("status") in {"blocked", "failed"}
+    ]
+    return {
+        "task_id": case.get("task_id"),
+        "command": case.get("command"),
+        "outcome": case.get("outcome"),
+        "failed_steps": failed_steps,
     }
 
 
@@ -108,7 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the local robot brain demo.")
     parser.add_argument(
         "--task",
-        default="who am i ",
+        default="把桌上的红杯子拿给我",
         help="Natural language task command.",
     )
     parser.add_argument(
